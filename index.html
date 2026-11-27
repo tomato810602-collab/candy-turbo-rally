@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>糖果飛車｜30 秒拉力賽</title><style>
 *{box-sizing:border-box}body{margin:0;background:#ffe9f5;color:#302052;font:700 16px system-ui,sans-serif}main{width:min(100%,480px);margin:auto;padding:12px}header{display:flex;align-items:center;justify-content:space-between;gap:8px}h1{margin:0;font-size:clamp(22px,6vw,32px)}small{background:#fff280;padding:5px 10px;border-radius:20px}.stats{display:flex;justify-content:space-between;padding:8px 2px}.track{position:relative;border-radius:22px;overflow:hidden;border:4px solid #382356;background:#8df0db}canvas{display:block;width:100%;height:clamp(240px,51svh,480px);touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-items:center;background:#3823569c;padding:16px}.card{background:#fff7ed;padding:15px;border-radius:20px;text-align:center;width:min(100%,320px);box-shadow:5px 5px #fa7bb6}.card h2{margin:0;font-size:25px}.card p{margin:8px 0;line-height:1.45}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}button,select{font:inherit;color:#2e194a;border:2px solid #382356;border-radius:14px;min-height:46px;touch-action:manipulation}button{background:#ffcf56;cursor:pointer}.controls button{background:#83ead9;font-size:22px}.controls button+button{background:#ffc2e3}.card button{width:100%;margin-top:8px}select{width:100%;background:white;padding:4px}button:disabled{opacity:.5}footer{text-align:center;font-size:13px;margin-top:8px}[hidden]{display:none!important}</style></head>
-<body><main><header><h1>🍬 糖果飛車</h1><small>30 秒拉力賽</small></header><div class="stats"><span>關卡 <b id="level">1</b></span><span>⏱ <b id="time">30</b> 秒</span><span>分數 <b id="score">0</b></span></div><div class="track"><canvas id="road" width="420" height="440" aria-label="三線賽道"></canvas><div class="overlay" id="overlay"><div class="card"><h2 id="title">甜甜賽道，出發！</h2><p id="result">換道閃車，吃星星加分。<br>撐過 30 秒就送你一台車！</p><select id="garage" aria-label="選擇賽車"></select><button id="start">開始比賽</button></div></div></div><div class="controls"><button id="left" disabled aria-label="向左換道">← 左轉</button><button id="right" disabled aria-label="向右換道">右轉 →</button></div><footer>可點賽道左右半邊，或用方向鍵</footer></main>
+<body><main><header><h1>🍬 糖果飛車</h1><small>30 秒拉力賽</small></header><div class="stats"><span>關卡 <b id="level">1</b></span><span>⏱ <b id="time">30</b> 秒</span><span>分數 <b id="score">0</b></span></div><div id="math" role="status" style="text-align:center;background:#fff280;padding:7px;border-radius:10px;margin-bottom:6px">選對數字閘門 ＋50 分</div><div class="track"><canvas id="road" width="420" height="440" aria-label="三線賽道"></canvas><div class="overlay" id="overlay"><div class="card"><h2 id="title">甜甜賽道，出發！</h2><p id="result">閃車、吃星星，遇到算式就開進正確答案的車道。<br>撐過 30 秒就送你一台車！</p><select id="garage" aria-label="選擇賽車"></select><button id="start">開始比賽</button></div></div></div><div class="controls"><button id="left" disabled aria-label="向左換道">← 左轉</button><button id="right" disabled aria-label="向右換道">右轉 →</button></div><footer>可點賽道左右半邊，或用方向鍵</footer></main>
 <script>
 const by=id=>document.getElementById(id);
 const canvas=by('road'), ctx=canvas.getContext('2d');
@@ -8,6 +8,7 @@ const palette=['#ff69b4','#47e2cd','#ffd652','#ac83ff','#fb8658','#8bea68'];
 const names=['草莓號','薄荷號','檸檬號','葡萄號','蜜桃號','青蘋果號'];
 let wins=0, selected=0;
 try {wins=Math.max(0,parseInt(localStorage.getItem('candy-wins'),10)||0);} catch {}
+let wave=0, gates=0;
 let mode='idle', lane=1, x=210, elapsed=0, score=0, stars=0, passed=0, traffic=[], sparks=[], nextSpawn=.65, last=0, crashTime=0;
 const laneX=i=>100+110*i;
 const carColor=i=>palette[i%palette.length];
@@ -32,6 +33,16 @@ function car(cx,y,c,player=false){
   rect(cx-15,y+18,10,6,'#fff5a0',3);rect(cx+5,y+18,10,6,'#fff5a0',3);
   if(player)rect(cx-3,y-31,6,10,'#fff5a0',2);
 }
+function gateQuestion(){
+  const a=2+Math.floor(Math.random()*9), b=1+Math.floor(Math.random()*8);
+  const subtract=Math.random()<.5;
+  const prompt=subtract ? Math.max(a,b)+' − '+Math.min(a,b) : a+' ＋ '+b;
+  const answer=subtract ? Math.abs(a-b) : a+b;
+  const lane=Math.floor(Math.random()*3);
+  const options=[answer+1,answer+3];
+  options.splice(lane,0,answer);
+  return {gate:true,prompt,options,lane,y:-35};
+}
 function draw(){
   rect(0,0,420,440,'#8ff0d6');
   for(let i=0;i<9;i++){
@@ -45,7 +56,15 @@ function draw(){
     rect(153,y,4,25,'#d0b6e7',2);rect(263,y,4,25,'#d0b6e7',2);
   }
   for(const item of traffic){
-    if(item.star){
+    if(item.gate){
+      if(item.used)continue;
+      for(let i=0;i<3;i++){
+        const cx=laneX(i);
+        rect(cx-45,item.y-21,90,42,palette[i],12);
+        ctx.fillStyle='#252042';ctx.font='bold 25px system-ui';ctx.textAlign='center';
+        ctx.fillText(item.options[i],cx,item.y+9);
+      }
+    }else if(item.star){
       ctx.font='32px system-ui';ctx.textAlign='center';ctx.fillText('⭐',laneX(item.lane),item.y+10);
     }else car(laneX(item.lane),item.y,item.color);
   }
@@ -53,6 +72,7 @@ function draw(){
   for(const p of sparks)rect(p.x,p.y,p.size,p.size,p.color,3);
 }
 function start(){
+  wave=gates=0;by('math').textContent='選對數字閘門 ＋50 分';
   mode='run';lane=1;x=210;elapsed=score=stars=passed=0;traffic=[];sparks=[];nextSpawn=.65;last=performance.now();
   by('overlay').hidden=true;by('left').disabled=by('right').disabled=false;hud();
 }
@@ -67,7 +87,7 @@ function finish(won){
     garage();
   }
   by('title').textContent=won?'🏁 過關！':'💥 撞車了！';
-  by('result').textContent='本局分數：'+score+'｜閃過 '+passed+' 台車、收集 '+stars+' 顆星。'+(won?' 解鎖 '+carName(selected)+'！':'');
+  by('result').textContent='本局分數：'+score+'｜閃過 '+passed+' 台車、收集 '+stars+' 顆星、答對 '+gates+' 道數字閘門。'+(won?' 解鎖 '+carName(selected)+'！':'');
   by('start').textContent=won?'挑戰下一關':'再玩一次';
   by('overlay').hidden=false;by('start').focus({preventScroll:true});
 }
@@ -82,18 +102,37 @@ function boom(){
 function update(dt){
   elapsed=Math.min(30,elapsed+dt);
   x+=(laneX(lane)-x)*Math.min(1,dt*18);
-  score=Math.floor(elapsed)*5+stars*25+passed*10;
+  score=Math.floor(elapsed)*5+stars*25+passed*10+gates*50;
   if(elapsed>=30){hud();finish(true);return;}
   if(elapsed>=nextSpawn){
+    wave++;
+    if(wave%5===3){
+      const gate=gateQuestion();
+      traffic.push(gate);
+      by('math').textContent='數字閘門：'+gate.prompt+' ＝ ？';
+    }else{
     const blocked=Math.floor(Math.random()*3);
     traffic.push({lane:blocked,y:-35,color:palette[Math.floor(Math.random()*6)]});
     if(Math.random()<.57)traffic.push({lane:(blocked+1+Math.floor(Math.random()*2))%3,y:-35,star:true});
+    }
     nextSpawn+=Math.max(.62,1.18-wins*.05-elapsed*.01);
   }
   const speed=155+elapsed*3+Math.min(wins,12)*8;
   for(const item of traffic){
     item.y+=speed*dt;
     if(item.used)continue;
+    if(item.gate){
+      if(item.y>=366){
+        item.used=true;
+        if(Math.abs(laneX(item.lane)-x)>=48){
+          by('math').textContent='答錯了！'+item.prompt+' ＝ '+item.options[item.lane];
+          hud();boom();return;
+        }
+        gates++;
+        by('math').textContent='答對！＋50 分';
+      }
+      continue;
+    }
     if(Math.abs(item.y-366)<(item.star?27:48) && Math.abs(laneX(item.lane)-x)<(item.star?35:44)){
       if(item.star){stars++;item.used=true;}
       else{hud();boom();return;}
@@ -101,7 +140,7 @@ function update(dt){
     if(!item.star && item.y>420){passed++;item.used=true;}
   }
   traffic=traffic.filter(i=>i.y<480 && !(i.star&&i.used));
-  score=Math.floor(elapsed)*5+stars*25+passed*10;hud();
+  score=Math.floor(elapsed)*5+stars*25+passed*10+gates*50;hud();
 }
 function frame(now){
   const dt=Math.min(.05,(now-last)/1000||0);
